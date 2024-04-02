@@ -1,6 +1,6 @@
 # -*- coding: <encoding name> -*-
 """
-PSNet model
+SCSANet model
 """
 from __future__ import print_function, division
 import torch.nn as nn
@@ -11,11 +11,11 @@ import torch.nn.functional as F
 
 
 ################################################################################
-# PSNet
+# SCASNet
 ################################################################################
-class PSNet(nn.Module):
+class SCASNet(nn.Module):
     def __init__(self):
-        super(PSNet, self).__init__()
+        super(SCASNet, self).__init__()
         self.vgg = VGG()
         self.dmp = BackEnd()
 
@@ -84,96 +84,32 @@ class VGG(nn.Module):
 
         return conv1_2, conv3_3, conv4_1, conv4_3
 
-class Decoder(nn.Module):
-    def __init__(self, C3_size, C4_size, C5_size, feature_size=256):
-        super(Decoder, self).__init__()
-
-        # upsample C5 to get P5 from the FPN paper
-        self.P5_1 = nn.Conv2d(C5_size, feature_size, kernel_size=1, stride=1, padding=0)
-        self.P5_upsampled = nn.Upsample(scale_factor=1, mode='nearest')
-        self.P5_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
-
-        # add P5 elementwise to C4
-        self.P4_1 = nn.Conv2d(C4_size, feature_size, kernel_size=1, stride=1, padding=0)
-        self.P4_upsampled = nn.Upsample(scale_factor=2, mode='nearest')
-        self.P4_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
-
-        # add P4 elementwise to C3
-        self.P3_1 = nn.Conv2d(C3_size, feature_size, kernel_size=1, stride=1, padding=0)
-        self.P3_upsampled = nn.Upsample(scale_factor=2, mode='nearest')
-        self.P3_2 = nn.Conv2d(feature_size, feature_size, kernel_size=3, stride=1, padding=1)
-
-
-    def forward(self, inputs):
-        C3, C4, C5 = inputs
-
-        P5_x = self.P5_1(C5)
-        P5_upsampled_x = self.P5_upsampled(P5_x)
-        P5_x = self.P5_2(P5_x)
-
-        P4_x = self.P4_1(C4)
-        P4_x = P5_upsampled_x + P4_x
-        P4_upsampled_x = self.P4_upsampled(P4_x)
-        P4_x = self.P4_2(P4_x)
-
-        P3_x = self.P3_1(C3)
-        P3_x = P3_x + P4_upsampled_x
-        P3_x = self.P3_2(P3_x)
-
-        return [P3_x, P4_x, P5_x]
 
 class BackEnd(nn.Module):
     def __init__(self):
         super(BackEnd, self).__init__()
 
-        self.att = ATT(512)
-        self.se = SELayer(512)
-        self.se1 = SELayer(256)
-        self.se2 = SELayer(128)
         self.dense1 = DenseModule(512)
         self.dense2 = DenseModule(512)
         self.dense3 = DenseModule(512)
         self.dense4 = DenseModule(64)
         self.dense5 = DenseModule(128)
         self.dense6 = DenseModule(256)
-        self.conv11 = BaseConv(1536, 1024, 3, 1, 1, activation=nn.ReLU(), use_bn=True)
-        self.conv12 = BaseConv(1024, 512, 3, 1, 1, activation=nn.ReLU(), use_bn=True)
         self.conv1 = BaseConv(512, 256, 3, 1, 1, activation=nn.ReLU(), use_bn=True)
         self.conv2 = BaseConv(256, 128, 3, 1, 1, activation=nn.ReLU(), use_bn=True)
         self.conv3 = BaseConv(128, 64, 3, 1, 1, activation=nn.ReLU(), use_bn=True)
         self.conv4 = BaseConv(64, 1, 1, 1, activation=None, use_bn=False)
-        self.ssh = SSH(512, 512)
-        self.AGAM = ChannelAttention(512)
-        self.fpn = Decoder(256, 512, 512)
 
     def forward(self, *input):
         conv1_2, conv3_3, conv4_1, conv4_3 = input
-        # x = self.conv12(x)
-        x = self.att(conv4_3)
-        # x = self.AGAM(conv4_3)
-        # conv4_3 = self.ssh(conv4_3)
-        input1, attention_map_1 = self.dense1(conv4_3)
-        # attention_map_1 *= x
-        # input1 = input1 + conv4_3
-        input, attention_map_2 = self.dense2(input1)
-        # input2 = input2 + input1
-        # attention_map_2 *= x
+        input, attention_map_1 = self.dense1(conv4_3)
+        input, attention_map_2 = self.dense2(input)
         input, attention_map_3 = self.dense3(input)
-        # input = input + input2
-        # input, attention_map_4 = self.dense3(input)
-
-
-        # input = self.se(input)
-        # input = self.ssh(input)
-        # input *= x
 
         input = self.conv1(input)
-        # input = self.se1(input)
         input = self.conv2(input)
-        # input = self.se2(input)
         input = self.conv3(input)
         input = self.conv4(input)
-        # input = torch.cat((input, conv3_3), dim=1)
 
 
         return input, attention_map_1, attention_map_2, attention_map_3
@@ -221,14 +157,10 @@ class ChannelAttention(nn.Module):
         super(ChannelAttention, self).__init__()
         self.max_pool = nn.AdaptiveMaxPool2d(1)
         self.conv1 = BaseConv(in_planes, round(in_planes // ratio), 1, 1, activation=nn.ReLU(), use_bn=False)
-        self.conv2 = BaseConv(round(in_planes // ratio), round(in_planes // ratio), 1, 1, activation=nn.Sigmoid(), use_bn=False)
-
-        self.conv3 = BaseConv(round(in_planes // ratio), in_planes, 1, 1, activation=nn.Sigmoid(), use_bn=False)
+        self.conv2 = BaseConv(round(in_planes // ratio), in_planes, 1, 1, activation=nn.Sigmoid(), use_bn=False)
     def forward(self, input):
-        # out = self.max_pool(input)
         out = self.conv1(input)
-        # out = self.conv2(out)
-        out = self.conv3(out)
+        out = self.conv2(out)
 
         return out
 
@@ -249,48 +181,28 @@ class DenseModule(nn.Module):
         self.conv9x9 = nn.Sequential(
             BaseConv(in_channels, in_channels // 4, 1, 1, activation=nn.ReLU(), use_bn=True),
             BaseConv(in_channels // 4, in_channels // 4, 3, 1, 4, 4, activation=nn.ReLU(), use_bn=True))
-        self.conv11x11 = nn.Sequential(
-            BaseConv(in_channels, in_channels // 4, 1, 1, activation=nn.ReLU(), use_bn=True),
-            BaseConv(in_channels // 4, in_channels // 4, 3, 1, 5, 5, activation=nn.ReLU(), use_bn=True))
-        self.conv13x13 = nn.Sequential(
-            BaseConv(in_channels, in_channels // 4, 1, 1, activation=nn.ReLU(), use_bn=True),
-            BaseConv(in_channels // 4, in_channels // 4, 3, 1, 6, 6, activation=nn.ReLU(), use_bn=True))
         self.up = BaseConv(in_channels,in_channels // 4, 1, 1, activation=nn.ReLU(), use_bn=True)
         self.conv1 = BaseConv(in_channels // 2, in_channels // 4, 3, 1, 2, 2, activation=nn.ReLU(), use_bn=True)
         self.conv2 = BaseConv(in_channels // 2, in_channels // 4, 3, 1, 2, 2,  activation=nn.ReLU(), use_bn=True)
         self.conv3 = BaseConv(in_channels // 2, in_channels // 4, 3, 1, 2, 2,  activation=nn.ReLU(), use_bn=True)
 
         self.att = ChannelAttention(in_channels)
-        self.ca = CoordAttention(in_channels,in_channels)
         self.conv = BaseConv(in_channels//4*5, in_channels, 3, 1, 1, activation=nn.ReLU(), use_bn=True)
         self.se = SELayer(512)
-        self.se1 = SELayer(4)
         self.ssh = SSH(512, 512)
-        self.ssh1 = SSH(128, 128)
     def forward(self, input):
         conv3x3 = self.conv3x3(input)
         conv5x5 = self.conv5x5(input)
         conv7x7 = self.conv7x7(input)
         conv9x9 = self.conv9x9(input)
-        # conv11x11 = self.conv11x11(input)
-        # conv13x13 = self.conv13x13(input)
 
         conv5x5 = self.conv1(torch.cat((conv3x3, conv5x5), dim=1))
         conv7x7 = self.conv2(torch.cat((conv5x5, conv7x7), dim=1))
         conv9x9 = self.conv3(torch.cat((conv7x7, conv9x9), dim=1))
-        # conv11x11 = self.conv3(torch.cat((conv9x9, conv11x11), dim=1))
-        # conv13x13 = self.conv3(torch.cat((conv11x11, conv13x13), dim=1))
-
-        # conv5x5 = self.ssh1(conv5x5)
-        # conv7x7 = self.ssh1(conv7x7)
-        # conv9x9 = self.ssh1(conv9x9)
         att = self.att(input)
         up = self.up(input)
         out = self.conv(torch.cat((up, conv3x3, conv5x5, conv7x7, conv9x9), dim=1))
-        # out = self.conv(torch.cat((up, conv3x3, conv5x5, conv7x7, conv9x9, conv11x11),dim=1))
-        # out = up
         out = self.se(out)
-        # out = self.ca(out)
         out = self.ssh(out)
         out = out*att
         attention_map = torch.cat((torch.mean(up, dim=1, keepdim=True),
@@ -298,8 +210,6 @@ class DenseModule(nn.Module):
                                    torch.mean(conv5x5, dim=1, keepdim=True),
                                    torch.mean(conv7x7, dim=1, keepdim=True),
                                    torch.mean(conv9x9, dim=1, keepdim=True)), dim=1)
-        # attention_map = self.se1(attention_map)
-        # attention_map = self.ssh1(attention_map)
         return out , attention_map
 
 
@@ -373,50 +283,5 @@ class SELayer(nn.Module):
         y = self.fc(y).view(b, c, 1, 1)
         return x * y.expand_as(x)
 
-import torch
-import torch.nn as nn
 
 
-class h_sigmoid(nn.Module):
-    def __init__(self, inplace=True):
-        super(h_sigmoid, self).__init__()
-        self.relu = nn.ReLU6(inplace=inplace)
-
-    def forward(self, x):
-        return self.relu(x + 3) / 6
-
-
-class h_swish(nn.Module):
-    def __init__(self, inplace=True):
-        super(h_swish, self).__init__()
-        self.sigmoid = h_sigmoid(inplace=inplace)
-
-    def forward(self, x):
-        return x * self.sigmoid(x)
-
-
-class CoordAttention(nn.Module):
-
-    def __init__(self, in_channels, out_channels, reduction=32):
-        super(CoordAttention, self).__init__()
-        self.pool_w, self.pool_h = nn.AdaptiveAvgPool2d((1, None)), nn.AdaptiveAvgPool2d((None, 1))
-        temp_c = max(8, in_channels // reduction)
-        self.conv1 = nn.Conv2d(in_channels, temp_c, kernel_size=1, stride=1, padding=0)
-
-        self.bn1 = nn.BatchNorm2d(temp_c)
-        self.act1 = h_swish()
-
-        self.conv2 = nn.Conv2d(temp_c, out_channels, kernel_size=1, stride=1, padding=0)
-        self.conv3 = nn.Conv2d(temp_c, out_channels, kernel_size=1, stride=1, padding=0)
-
-    def forward(self, x):
-        short = x
-        n, c, H, W = x.shape
-        x_h, x_w = self.pool_h(x), self.pool_w(x).permute(0, 1, 3, 2)
-        x_cat = torch.cat([x_h, x_w], dim=2)
-        out = self.act1(self.bn1(self.conv1(x_cat)))
-        x_h, x_w = torch.split(out, [H, W], dim=2)
-        x_w = x_w.permute(0, 1, 3, 2)
-        out_h = torch.sigmoid(self.conv2(x_h))
-        out_w = torch.sigmoid(self.conv3(x_w))
-        return short * out_w * out_h
