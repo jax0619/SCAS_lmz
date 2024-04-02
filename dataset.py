@@ -48,17 +48,6 @@ class CrowdCountingDataset(Dataset):
         with h5py.File(density_path, 'r') as hf:
             density = np.asarray(hf['density'])
 
-        # if self.mode != 'train':
-        #     # image
-        #     img = self.transforms(img)
-        #     # density map
-        #     gt = np.sum(density)
-        #     density = cv2.resize(density,
-        #                          (density.shape[1] // self.scale, density.shape[0] // self.scale),
-        #                          interpolation=cv2.INTER_CUBIC) * (self.scale ** 2)
-        #     density = density[np.newaxis, :, :]
-        #
-        #     return img, gt, density
 
 
         if self.mode != 'train':
