@@ -8,7 +8,7 @@ import os
 import numpy as np
 import time
 from utils import adjust_learning_rate, setup_seed
-from model51 import PSNet
+from model import SCSANet
 from dataset import CrowdCountingDataset
 # %matplotlib inline
 
@@ -29,7 +29,7 @@ if not os.path.isdir('checkpoint'):
 
 
 ################################################################################
-# train PSNet model to generate density map
+# train SCASNet model to generate density map
 ################################################################################
 def train():
     """
@@ -77,7 +77,7 @@ def train():
     val_loader = DataLoader(val_dataset, batch_size = 1, num_workers=workers)
 
     # define model
-    model = PSNet().float()
+    model = SCASNet().float()
     model = model.to(device)
 
     # define optimizer
