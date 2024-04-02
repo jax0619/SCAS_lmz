@@ -18,5 +18,5 @@ PyTorch: 1.5.0
 
 # Results
 partA: MAE 51.2 MSE 85.3  
-  
+Weight path: https://pan.baidu.com/s/1y9NO5zFxKMxdICAlLBL4Aw (password:euzo)
 
