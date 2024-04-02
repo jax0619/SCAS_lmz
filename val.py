@@ -6,7 +6,7 @@ import torch.nn as nn
 import os
 import numpy as np
 from dataset import CrowdCountingDataset
-from model51 import PSNet
+from model51 import SCASNet
 # %matplotlib inline
 
 
@@ -44,13 +44,13 @@ def val():
     val_loader = DataLoader(val_dataset, batch_size = 1, num_workers=workers)
 
     # define model
-    model = PSNet().float()
+    model = SCASNet().float()
     model = model.to(device)
 
     # load model weights
     print('==> Resuming from checkpoint..')
     assert os.path.isdir('Checkpoint'), 'Error: no Checkpoint directory found!'
-    state = torch.load('/media/sys-408/3d897023-498d-418b-a4c6-b4fe5e1f44ae/CODE/ps1/result/51.2/models/ckpt_best.pth')
+    state = torch.load('ckpt_best.pth')
     model.load_state_dict(state['net'])
     BEST_MAE = state['mae']
     BEST_MSE = state['mse']
